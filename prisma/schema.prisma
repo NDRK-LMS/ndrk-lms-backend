@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String    @id @default(uuid())
+  email              String    @unique
+  passwordHash       String?
+  fullName           String
+  role               String    // SUPER_ADMIN, PROGRAMME_ADMIN, FACULTY, GUEST_FACULTY, EVALUATOR, LEARNER
+  status             String    @default("ACTIVE") // ACTIVE, DISABLED, PENDING
+  googleId           String?   @unique
+  avatarUrl          String?
+
+  // MFA Fields
+  mfaEnabled         Boolean   @default(false)
+  mfaSecret          String?
+  mfaRecoveryCodes   String?
+
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  sessions           Session[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@map("users")
+}
+
+model Session {
+  id                 String   @id @default(uuid())
+  userId             String
+  refreshTokenHash   String
+  expiresAt          DateTime
+  createdAt          DateTime @default(now())
+  lastActiveAt       DateTime @default(now())
+
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}
