@@ -46,7 +46,7 @@ export class AuthService {
     return decrypted.toString('utf8');
   }
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, context?: { ipAddress?: string; deviceInfo?: unknown }) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) {
       throw new BadRequestException('User with this email already exists');
@@ -74,10 +74,10 @@ export class AuthService {
       },
     });
 
-    return this.generateTokens(user);
+    return this.generateTokens(user, context);
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, context?: { ipAddress?: string; deviceInfo?: unknown }) {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user || !user.passwordHash) {
       throw new UnauthorizedException('Invalid credentials');
@@ -104,10 +104,10 @@ export class AuthService {
       };
     }
 
-    return this.generateTokens(user);
+    return this.generateTokens(user, context);
   }
 
-  async googleLogin(googleToken: string) {
+  async googleLogin(googleToken: string, context?: { ipAddress?: string; deviceInfo?: unknown }) {
     try {
       const ticket = await this.googleClient.verifyIdToken({
         idToken: googleToken,
@@ -136,6 +136,21 @@ export class AuthService {
             status: 'ACTIVE',
           },
         });
+      } else {
+        const updateData: Record<string, string> = {};
+        if (!user.googleId && googleId) {
+          updateData.googleId = googleId;
+        }
+        if (!user.avatarUrl && avatarUrl) {
+          updateData.avatarUrl = avatarUrl;
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          user = await this.prisma.user.update({
+            where: { id: user.id },
+            data: updateData,
+          });
+        }
       }
 
       if (user.status !== 'ACTIVE') {
@@ -156,7 +171,7 @@ export class AuthService {
 
       return {
         requiresMfa: false,
-        ...(await this.generateTokens(user)),
+        ...(await this.generateTokens(user, context)),
       };
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
@@ -200,7 +215,11 @@ export class AuthService {
   }
 
   // Verify MFA during initial setup and enable it
-  async mfaVerify(tempToken: string, code: string) {
+  async mfaVerify(
+    tempToken: string,
+    code: string,
+    context?: { ipAddress?: string; deviceInfo?: unknown },
+  ) {
     const userId = this.verifyTempToken(tempToken);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.mfaSecret) {
@@ -218,11 +237,15 @@ export class AuthService {
       data: { mfaEnabled: true },
     });
 
-    return this.generateTokens(updated);
+    return this.generateTokens(updated, context);
   }
 
   // Verify MFA on subsequent logins
-  async mfaChallenge(tempToken: string, code: string) {
+  async mfaChallenge(
+    tempToken: string,
+    code: string,
+    context?: { ipAddress?: string; deviceInfo?: unknown },
+  ) {
     const userId = this.verifyTempToken(tempToken);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.mfaSecret || !user.mfaEnabled) {
@@ -235,7 +258,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid MFA code');
     }
 
-    return this.generateTokens(user);
+    return this.generateTokens(user, context);
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
@@ -293,14 +316,17 @@ export class AuthService {
     return { message: 'Password has been reset successfully.' };
   }
 
-  async generateTokens(user: {
+  async generateTokens(
+    user: {
     id: string;
     email: string;
     fullName: string;
     role: string;
     avatarUrl: string | null;
     mfaEnabled: boolean;
-  }) {
+    },
+    context?: { ipAddress?: string; deviceInfo?: unknown },
+  ) {
     const payload = {
       sub: user.id,
       email: user.email,
@@ -321,6 +347,9 @@ export class AuthService {
       data: {
         userId: user.id,
         refreshTokenHash: await hash(refreshToken, 10),
+        // If deviceInfo is undefined, Prisma will simply not set the field.
+        deviceInfo: context?.deviceInfo as any,
+        ipAddress: context?.ipAddress ?? '0.0.0.0',
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
@@ -376,7 +405,10 @@ export class AuthService {
     }
   }
 
-  async refreshTokens(refreshToken: string) {
+  async refreshTokens(
+    refreshToken: string,
+    context?: { ipAddress?: string; deviceInfo?: unknown },
+  ) {
     try {
       const payload = this.jwtService.verify(refreshToken, {
         secret: process.env.JWT_REFRESH_SECRET,
@@ -392,7 +424,7 @@ export class AuthService {
       }
 
       await this.prisma.session.delete({ where: { id: session.id } });
-      return this.generateTokens(session.user);
+      return this.generateTokens(session.user, context);
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -409,12 +441,54 @@ export class AuthService {
         avatarUrl: true,
         mfaEnabled: true,
         lastLoginAt: true,
+        phone: true,
+        bio: true,
+        notificationPrefs: true,
       },
     });
 
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
+    return user;
+  }
+
+  async updateMe(
+    userId: string,
+    data: {
+      fullName?: string;
+      phone?: string;
+      avatarUrl?: string;
+      bio?: string;
+      notificationPrefs?: unknown;
+      metadata?: unknown;
+    },
+  ) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        fullName: data.fullName,
+        phone: data.phone,
+        avatarUrl: data.avatarUrl,
+        bio: data.bio,
+        notificationPrefs: data.notificationPrefs as any,
+        metadata: data.metadata as any,
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        avatarUrl: true,
+        mfaEnabled: true,
+        lastLoginAt: true,
+        phone: true,
+        bio: true,
+        notificationPrefs: true,
+        metadata: true,
+      },
+    });
+
     return user;
   }
 }
