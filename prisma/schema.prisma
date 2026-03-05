@@ -8,39 +8,50 @@ datasource db {
 }
 
 model User {
-  id                 String    @id @default(uuid())
-  email              String    @unique
-  passwordHash       String?
-  fullName           String
-  role               String    // SUPER_ADMIN, PROGRAMME_ADMIN, FACULTY, GUEST_FACULTY, EVALUATOR, LEARNER
-  status             String    @default("ACTIVE") // ACTIVE, DISABLED, PENDING
-  googleId           String?   @unique
-  avatarUrl          String?
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  passwordHash        String?
+  fullName            String
+  phone               String?
+  avatarUrl           String?
+  bio                 String?
+  role                String    // SUPER_ADMIN, PROGRAMME_ADMIN, FACULTY, GUEST_FACULTY, EVALUATOR, LEARNER
+  status              String    @default("ACTIVE") // ACTIVE, DISABLED, PENDING
+  googleId            String?   @unique
 
   // MFA Fields
-  mfaEnabled         Boolean   @default(false)
-  mfaSecret          String?
-  mfaRecoveryCodes   String?
+  mfaEnabled          Boolean   @default(false)
+  mfaSecret           String?
+  mfaRecoveryCodes    String?
 
-  lastLoginAt        DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  emailVerified       Boolean   @default(true)
+  lastLoginAt         DateTime?
+  lastLoginIp         String?
+  notificationPrefs   Json?
+  metadata            Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
 
-  sessions           Session[]
+  sessions            Session[]
   passwordResetTokens PasswordResetToken[]
 
   @@map("users")
 }
 
 model Session {
-  id                 String   @id @default(uuid())
-  userId             String
-  refreshTokenHash   String
-  expiresAt          DateTime
-  createdAt          DateTime @default(now())
-  lastActiveAt       DateTime @default(now())
+  id                String   @id @default(uuid())
+  userId            String
+  refreshTokenHash  String
+  deviceInfo        Json?
+  ipAddress         String  @default("0.0.0.0")
+  isTrusted         Boolean  @default(false)
+  trustedUntil      DateTime?
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+  lastActiveAt      DateTime @default(now())
 
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("sessions")
 }
