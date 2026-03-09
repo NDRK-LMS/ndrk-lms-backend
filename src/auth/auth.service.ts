@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/
 import { JwtService } from '@nestjs/jwt';
 import { OAuth2Client } from 'google-auth-library';
 import { PrismaService } from '../prisma/prisma.service';
+import type { Prisma } from '@prisma/client';
 import { hash, compare } from 'bcrypt';
 import { randomBytes, createCipheriv, createDecipheriv, createHash } from 'crypto';
 import * as otplib from 'otplib';
@@ -10,6 +11,12 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+
+type RequestContext = {
+  ipAddress?: string | null;
+  deviceInfo?: Prisma.InputJsonValue;
+};
 
 @Injectable()
 export class AuthService {
@@ -46,7 +53,7 @@ export class AuthService {
     return decrypted.toString('utf8');
   }
 
-  async register(dto: RegisterDto, context?: { ipAddress?: string; deviceInfo?: unknown }) {
+  async register(dto: RegisterDto, context?: RequestContext) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) {
       throw new BadRequestException('User with this email already exists');
@@ -77,7 +84,7 @@ export class AuthService {
     return this.generateTokens(user, context);
   }
 
-  async login(dto: LoginDto, context?: { ipAddress?: string; deviceInfo?: unknown }) {
+  async login(dto: LoginDto, context?: RequestContext) {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user || !user.passwordHash) {
       throw new UnauthorizedException('Invalid credentials');
@@ -107,7 +114,7 @@ export class AuthService {
     return this.generateTokens(user, context);
   }
 
-  async googleLogin(googleToken: string, context?: { ipAddress?: string; deviceInfo?: unknown }) {
+  async googleLogin(googleToken: string, context?: RequestContext) {
     try {
       const ticket = await this.googleClient.verifyIdToken({
         idToken: googleToken,
@@ -136,21 +143,6 @@ export class AuthService {
             status: 'ACTIVE',
           },
         });
-      } else {
-        const updateData: Record<string, string> = {};
-        if (!user.googleId && googleId) {
-          updateData.googleId = googleId;
-        }
-        if (!user.avatarUrl && avatarUrl) {
-          updateData.avatarUrl = avatarUrl;
-        }
-
-        if (Object.keys(updateData).length > 0) {
-          user = await this.prisma.user.update({
-            where: { id: user.id },
-            data: updateData,
-          });
-        }
       }
 
       if (user.status !== 'ACTIVE') {
@@ -215,11 +207,7 @@ export class AuthService {
   }
 
   // Verify MFA during initial setup and enable it
-  async mfaVerify(
-    tempToken: string,
-    code: string,
-    context?: { ipAddress?: string; deviceInfo?: unknown },
-  ) {
+  async mfaVerify(tempToken: string, code: string, context?: RequestContext) {
     const userId = this.verifyTempToken(tempToken);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.mfaSecret) {
@@ -241,11 +229,7 @@ export class AuthService {
   }
 
   // Verify MFA on subsequent logins
-  async mfaChallenge(
-    tempToken: string,
-    code: string,
-    context?: { ipAddress?: string; deviceInfo?: unknown },
-  ) {
+  async mfaChallenge(tempToken: string, code: string, context?: RequestContext) {
     const userId = this.verifyTempToken(tempToken);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.mfaSecret || !user.mfaEnabled) {
@@ -325,7 +309,7 @@ export class AuthService {
     avatarUrl: string | null;
     mfaEnabled: boolean;
     },
-    context?: { ipAddress?: string; deviceInfo?: unknown },
+    context?: RequestContext,
   ) {
     const payload = {
       sub: user.id,
@@ -347,10 +331,9 @@ export class AuthService {
       data: {
         userId: user.id,
         refreshTokenHash: await hash(refreshToken, 10),
-        // If deviceInfo is undefined, Prisma will simply not set the field.
-        deviceInfo: context?.deviceInfo as any,
-        ipAddress: context?.ipAddress ?? '0.0.0.0',
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        ipAddress: context?.ipAddress ?? '0.0.0.0',
+        deviceInfo: context?.deviceInfo,
       },
     });
 
@@ -405,10 +388,7 @@ export class AuthService {
     }
   }
 
-  async refreshTokens(
-    refreshToken: string,
-    context?: { ipAddress?: string; deviceInfo?: unknown },
-  ) {
+  async refreshTokens(refreshToken: string, context?: RequestContext) {
     try {
       const payload = this.jwtService.verify(refreshToken, {
         secret: process.env.JWT_REFRESH_SECRET,
@@ -453,27 +433,23 @@ export class AuthService {
     return user;
   }
 
-  async updateMe(
-    userId: string,
-    data: {
-      fullName?: string;
-      phone?: string;
-      avatarUrl?: string;
-      bio?: string;
-      notificationPrefs?: unknown;
-      metadata?: unknown;
-    },
-  ) {
-    const user = await this.prisma.user.update({
+  async updateMe(userId: string, dto: UpdateProfileDto) {
+    const data: Prisma.UserUpdateInput = {};
+
+    if (dto.fullName != null) data.fullName = dto.fullName;
+    if (dto.phone !== undefined) data.phone = dto.phone;
+    if (dto.avatarUrl !== undefined) data.avatarUrl = dto.avatarUrl;
+    if (dto.bio !== undefined) data.bio = dto.bio;
+    if (dto.notificationPrefs !== undefined) {
+      data.notificationPrefs = dto.notificationPrefs as Prisma.InputJsonValue;
+    }
+    if (dto.metadata !== undefined) {
+      data.metadata = dto.metadata as Prisma.InputJsonValue;
+    }
+
+    const updated = await this.prisma.user.update({
       where: { id: userId },
-      data: {
-        fullName: data.fullName,
-        phone: data.phone,
-        avatarUrl: data.avatarUrl,
-        bio: data.bio,
-        notificationPrefs: data.notificationPrefs as any,
-        metadata: data.metadata as any,
-      },
+      data,
       select: {
         id: true,
         email: true,
@@ -485,10 +461,9 @@ export class AuthService {
         phone: true,
         bio: true,
         notificationPrefs: true,
-        metadata: true,
       },
     });
 
-    return user;
+    return updated;
   }
 }

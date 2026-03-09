@@ -6,16 +6,32 @@ export class AdminDashboardService {
   constructor(private prisma: PrismaService) {}
 
   async getOverview() {
-    const userCount = await this.prisma.user.count();
+    const [totalUsers, activeUsers] = await Promise.all([
+      this.prisma.user.count({ where: { deletedAt: null } }),
+      this.prisma.user.count({
+        where: { deletedAt: null, status: 'ACTIVE' },
+      }),
+    ]);
 
     return {
-      summary: {
-        users: userCount,
-        programmes: 0,
-        batches: 0,
+      totalUsers,
+      totalProgrammes: 0,
+      totalBatches: 0,
+      totalCertificates: 0,
+      activeUsers,
+      systemHealth: {
+        database: 'Operational',
+        storage: 'Available',
+        api: 'Operational',
       },
+      recentActivity: [
+        {
+          action: 'Dashboard loaded',
+          time: 'Just now',
+          user: 'System',
+        },
+      ],
     };
   }
 }
-
 

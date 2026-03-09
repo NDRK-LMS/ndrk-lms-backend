@@ -11,9 +11,8 @@ import { UserRole } from '@ndrk/shared';
 export class AdminDashboardController {
   constructor(private readonly service: AdminDashboardService) {}
 
-  @Get()
+  @Get('stats')
   async getOverview() {
     return this.service.getOverview();
   }
 }
-
