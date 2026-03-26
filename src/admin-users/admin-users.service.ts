@@ -24,16 +24,24 @@ export class AdminUsersService {
       search,
       role,
       status,
-      sortBy = 'createdAt',
+      sortBy: rawSortBy = 'created_at',
       sortOrder = 'desc',
     } = options;
 
-    const where: Prisma.UserWhereInput = { deletedAt: null };
+    const sortByMap: Record<string, string> = {
+      createdAt: 'created_at',
+      fullName: 'full_name',
+      lastLoginAt: 'last_login_at',
+      avatarUrl: 'avatar_url',
+    };
+    const sortBy = sortByMap[rawSortBy] ?? rawSortBy;
+
+    const where: Prisma.UserWhereInput = { deleted_at: null };
 
     if (search?.trim()) {
       where.OR = [
         { email: { contains: search.trim(), mode: 'insensitive' } },
-        { fullName: { contains: search.trim(), mode: 'insensitive' } },
+        { full_name: { contains: search.trim(), mode: 'insensitive' } },
       ];
     }
     if (role && role !== 'all') {
@@ -52,12 +60,12 @@ export class AdminUsersService {
         select: {
           id: true,
           email: true,
-          fullName: true,
+          full_name: true,
           role: true,
           status: true,
-          lastLoginAt: true,
-          createdAt: true,
-          avatarUrl: true,
+          last_login_at: true,
+          created_at: true,
+          avatar_url: true,
         },
       }),
       this.prisma.user.count({ where }),
@@ -77,13 +85,13 @@ export class AdminUsersService {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
     const [totalUsers, activeUsers, disabledUsers, newThisMonth] = await Promise.all([
-      this.prisma.user.count({ where: { deletedAt: null } }),
-      this.prisma.user.count({ where: { deletedAt: null, status: UserStatus.ACTIVE } }),
-      this.prisma.user.count({ where: { deletedAt: null, status: UserStatus.DISABLED } }),
+      this.prisma.user.count({ where: { deleted_at: null } }),
+      this.prisma.user.count({ where: { deleted_at: null, status: UserStatus.ACTIVE } }),
+      this.prisma.user.count({ where: { deleted_at: null, status: UserStatus.DISABLED } }),
       this.prisma.user.count({
         where: {
-          deletedAt: null,
-          createdAt: { gte: startOfMonth },
+          deleted_at: null,
+          created_at: { gte: startOfMonth },
         },
       }),
     ]);
@@ -98,19 +106,19 @@ export class AdminUsersService {
 
   async findOne(id: string) {
     return this.prisma.user.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, deleted_at: null },
       select: {
         id: true,
         email: true,
-        fullName: true,
+        full_name: true,
         phone: true,
         role: true,
         status: true,
-        avatarUrl: true,
-        mfaEnabled: true,
-        lastLoginAt: true,
-        createdAt: true,
-        googleId: true,
+        avatar_url: true,
+        mfa_enabled: true,
+        last_login_at: true,
+        created_at: true,
+        google_id: true,
       },
     });
   }
@@ -125,7 +133,7 @@ export class AdminUsersService {
     const existing = await this.prisma.user.findUnique({
       where: { email: input.email },
     });
-    if (existing && !existing.deletedAt) {
+    if (existing && !existing.deleted_at) {
       throw new BadRequestException('User with this email already exists');
     }
 
@@ -133,12 +141,13 @@ export class AdminUsersService {
 
     const data: Prisma.UserCreateInput = {
       email: input.email,
-      fullName: input.fullName,
+      full_name: input.fullName,
       role: input.role,
       status: UserStatus.ACTIVE,
+      updated_at: new Date(),
     };
     if (input.phone) data.phone = input.phone;
-    if (passwordHash) data.passwordHash = passwordHash;
+    if (passwordHash) data.password_hash = passwordHash;
 
     return this.prisma.user.create({ data });
   }
@@ -148,7 +157,7 @@ export class AdminUsersService {
     data: { fullName?: string; role?: UserRole | string; status?: UserStatus | string; phone?: string },
   ) {
     const updateData: Prisma.UserUpdateInput = {};
-    if (data.fullName != null) updateData.fullName = data.fullName;
+    if (data.fullName != null) updateData.full_name = data.fullName;
     if (data.phone !== undefined) updateData.phone = data.phone;
     if (data.role != null) updateData.role = data.role as UserRole;
     if (data.status != null) updateData.status = data.status as UserStatus;
@@ -162,7 +171,7 @@ export class AdminUsersService {
   async bulkUpdateStatus(userIds: string[], status: UserStatus) {
     if (!userIds.length) return { updated: 0 };
     const result = await this.prisma.user.updateMany({
-      where: { id: { in: userIds }, deletedAt: null },
+      where: { id: { in: userIds }, deleted_at: null },
       data: { status },
     });
     return { updated: result.count };
@@ -172,7 +181,7 @@ export class AdminUsersService {
     await this.prisma.user.update({
       where: { id },
       data: {
-        deletedAt: new Date(),
+        deleted_at: new Date(),
         metadata: {
           deleteReason: 'admin',
           deletedBy,
@@ -245,4 +254,3 @@ export class AdminUsersService {
     };
   }
 }
-
