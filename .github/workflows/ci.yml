@@ -1,0 +1,37 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+jobs:
+  ci:
+    name: TypeScript + Tests + Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Run unit tests
+        run: npm run test -- --passWithNoTests --forceExit
+
+      - name: Build check
+        run: npm run build
