@@ -8,63 +8,644 @@ datasource db {
 }
 
 model User {
-  id                  String    @id @default(uuid())
-  email               String    @unique
-  passwordHash        String?
-  fullName            String
-  phone               String?
-  avatarUrl           String?
-  bio                 String?
-  role                String    // SUPER_ADMIN, PROGRAMME_ADMIN, FACULTY, GUEST_FACULTY, EVALUATOR, LEARNER
-  status              String    @default("ACTIVE") // ACTIVE, DISABLED, PENDING
-  googleId            String?   @unique
+  id                                         String                  @id @default(uuid())
+  email                                      String                  @unique
+  avatar_url                                 String?
+  bio                                        String?
+  created_at                                 DateTime                @default(now())
+  deleted_at                                 DateTime?
+  email_verified                             Boolean                 @default(true)
+  full_name                                  String
+  google_id                                  String?                 @unique
+  last_login_at                              DateTime?
+  last_login_ip                              String?                 @db.VarChar(45)
+  metadata                                   Json?
+  mfa_enabled                                Boolean                 @default(false)
+  mfa_recovery_codes                         String?
+  mfa_secret                                 String?
+  notification_prefs                         Json?
+  password_hash                              String?
+  phone                                      String?
+  updated_at                                 DateTime
+  role                                       UserRole                @default(LEARNER)
+  status                                     UserStatus              @default(ACTIVE)
+  assessments                                assessments[]
+  audit_logs                                 audit_logs[]
+  batch_faculty                              batch_faculty[]
+  certificates_certificates_issued_byTousers certificates[]          @relation("certificates_issued_byTousers")
+  certificates_certificates_user_idTousers   certificates[]          @relation("certificates_user_idTousers")
+  contents                                   contents[]
+  discussions                                discussions[]
+  enrollments                                enrollments[]
+  lesson_notes                               lesson_notes[]
+  lesson_progress                            lesson_progress[]
+  live_class_attendance                      live_class_attendance[]
+  live_classes                               live_classes[]
+  notifications_notifications_sent_byTousers notifications[]         @relation("notifications_sent_byTousers")
+  notifications_notifications_user_idTousers notifications[]         @relation("notifications_user_idTousers")
+  password_reset_tokens                      PasswordResetToken[]
+  programmes                                 programmes[]
+  sessions                                   Session[]
+  settings                                   settings[]
+  submissions_submissions_graded_byTousers   submissions[]           @relation("submissions_graded_byTousers")
+  submissions_submissions_user_idTousers     submissions[]           @relation("submissions_user_idTousers")
 
-  // MFA Fields
-  mfaEnabled          Boolean   @default(false)
-  mfaSecret           String?
-  mfaRecoveryCodes    String?
-
-  emailVerified       Boolean   @default(true)
-  lastLoginAt         DateTime?
-  lastLoginIp         String?
-  notificationPrefs   Json?
-  metadata            Json?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  deletedAt           DateTime?
-
-  sessions            Session[]
-  passwordResetTokens PasswordResetToken[]
-
+  @@index([email])
+  @@index([role, status])
   @@map("users")
 }
 
 model Session {
-  id                String   @id @default(uuid())
-  userId            String
-  refreshTokenHash  String
-  deviceInfo        Json?
-  ipAddress         String  @default("0.0.0.0")
-  isTrusted         Boolean  @default(false)
-  trustedUntil      DateTime?
-  expiresAt         DateTime
-  createdAt         DateTime @default(now())
-  lastActiveAt      DateTime @default(now())
+  id                 String    @id @default(uuid())
+  created_at         DateTime  @default(now())
+  device_info        Json?
+  expires_at         DateTime
+  ip_address         String?   @db.VarChar(45)
+  is_trusted         Boolean   @default(false)
+  last_active_at     DateTime  @default(now())
+  refresh_token_hash String    @unique
+  trusted_until      DateTime?
+  user_id            String
+  users              User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  @@index([user_id, expires_at])
   @@map("sessions")
 }
 
 model PasswordResetToken {
-  id        String   @id @default(uuid())
-  userId    String
-  tokenHash String
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime @default(now())
-
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String    @id @default(uuid())
+  expiresAt  DateTime
+  created_at DateTime  @default(now())
+  token_hash String
+  used_at    DateTime?
+  user_id    String
+  users      User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@map("password_reset_tokens")
+}
+
+model answers {
+  id                  String      @id @default(uuid())
+  submission_id       String
+  question_id         String
+  selected_option_ids String[]
+  text_answer         String?
+  file_s3_key         String?     @db.VarChar(1000)
+  file_name           String?     @db.VarChar(500)
+  isCorrect           Boolean?
+  points_awarded      Decimal?    @db.Decimal(5, 2)
+  feedback            String?
+  is_flagged          Boolean     @default(false)
+  questions           questions   @relation(fields: [question_id], references: [id])
+  submissions         submissions @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+}
+
+model assessments {
+  id                  String           @id @default(uuid())
+  title               String           @db.VarChar(500)
+  description         String?
+  type                AssessmentType
+  programme_id        String
+  module_id           String?
+  batch_id            String?
+  status              AssessmentStatus @default(DRAFT)
+  duration_minutes    Int?
+  max_attempts        Int              @default(1)
+  passing_score       Decimal?         @db.Decimal(5, 2)
+  total_points        Decimal          @db.Decimal(7, 2)
+  shuffle_questions   Boolean          @default(false)
+  shuffle_options     Boolean          @default(false)
+  show_results        ShowResults      @default(AFTER_GRADING)
+  allow_review        Boolean          @default(true)
+  negative_marking    Boolean          @default(false)
+  negative_mark_value Decimal?         @db.Decimal(5, 2)
+  available_from      DateTime?
+  available_until     DateTime?
+  created_by          String
+  created_at          DateTime         @default(now())
+  updated_at          DateTime
+  batches             batches?         @relation(fields: [batch_id], references: [id])
+  users               User             @relation(fields: [created_by], references: [id])
+  modules             modules?         @relation(fields: [module_id], references: [id])
+  programmes          programmes       @relation(fields: [programme_id], references: [id])
+  lessons             lessons[]
+  questions           questions[]
+  submissions         submissions[]
+}
+
+model audit_logs {
+  id            String   @id @default(uuid())
+  actor_id      String?
+  action        String   @db.VarChar(100)
+  resource_type String   @db.VarChar(100)
+  resource_id   String?
+  details       Json?
+  ip_address    String?  @db.VarChar(45)
+  user_agent    String?
+  created_at    DateTime @default(now())
+  users         User?    @relation(fields: [actor_id], references: [id])
+
+  @@index([actor_id, created_at])
+  @@index([created_at])
+  @@index([resource_type, resource_id])
+}
+
+model batch_faculty {
+  id          String      @id @default(uuid())
+  batch_id    String
+  user_id     String
+  role        FacultyRole @default(SECONDARY)
+  assigned_at DateTime    @default(now())
+  batches     batches     @relation(fields: [batch_id], references: [id], onDelete: Cascade)
+  users       User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([batch_id, user_id])
+}
+
+model batches {
+  id            String          @id @default(uuid())
+  programme_id  String
+  name          String          @db.VarChar(255)
+  start_date    DateTime?
+  end_date      DateTime?
+  capacity      Int?
+  status        BatchStatus     @default(ACTIVE)
+  created_at    DateTime        @default(now())
+  updated_at    DateTime
+  assessments   assessments[]
+  batch_faculty batch_faculty[]
+  programmes    programmes      @relation(fields: [programme_id], references: [id], onDelete: Cascade)
+  enrollments   enrollments[]
+  live_classes  live_classes[]
+}
+
+model certificates {
+  id                                  String            @id @default(uuid())
+  certificate_number                  String            @unique @db.VarChar(50)
+  user_id                             String
+  programme_id                        String
+  batch_id                            String?
+  issued_at                           DateTime          @default(now())
+  issued_by                           String
+  status                              CertificateStatus @default(ACTIVE)
+  revoked_at                          DateTime?
+  revoked_reason                      String?
+  pdf_s3_key                          String?           @db.VarChar(1000)
+  qr_code_url                         String?
+  verification_url                    String
+  final_attendance_pct                Decimal?          @db.Decimal(5, 2)
+  final_grade_pct                     Decimal?          @db.Decimal(5, 2)
+  metadata                            Json?
+  created_at                          DateTime          @default(now())
+  users_certificates_issued_byTousers User              @relation("certificates_issued_byTousers", fields: [issued_by], references: [id])
+  programmes                          programmes        @relation(fields: [programme_id], references: [id])
+  users_certificates_user_idTousers   User              @relation("certificates_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model contents {
+  id               String          @id @default(uuid())
+  title            String          @db.VarChar(500)
+  description      String?
+  type             ContentType
+  s3_key           String?         @db.VarChar(1000)
+  s3_bucket        String?         @db.VarChar(255)
+  file_size_bytes  BigInt?
+  mime_type        String?         @db.VarChar(255)
+  duration_seconds Int?
+  transcode_status TranscodeStatus @default(PENDING)
+  transcode_job_id String?         @db.VarChar(255)
+  hls_manifest_key String?         @db.VarChar(1000)
+  thumbnail_url    String?
+  tags             String[]
+  uploaded_by      String
+  created_at       DateTime        @default(now())
+  updated_at       DateTime
+  deleted_at       DateTime?
+  users            User            @relation(fields: [uploaded_by], references: [id])
+  lessons          lessons[]
+
+  @@index([transcode_status])
+  @@index([uploaded_by])
+}
+
+model discussions {
+  id                String        @id @default(uuid())
+  lesson_id         String
+  user_id           String
+  parent_id         String?
+  body              String
+  is_pinned         Boolean       @default(false)
+  created_at        DateTime      @default(now())
+  updated_at        DateTime
+  deleted_at        DateTime?
+  lessons           lessons       @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+  discussions       discussions?  @relation("discussionsTodiscussions", fields: [parent_id], references: [id])
+  other_discussions discussions[] @relation("discussionsTodiscussions")
+  users             User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([lesson_id, created_at])
+}
+
+model enrollments {
+  id                    String                  @id @default(uuid())
+  user_id               String
+  batch_id              String
+  programme_id          String
+  status                EnrollmentStatus        @default(ACTIVE)
+  enrolled_at           DateTime                @default(now())
+  completed_at          DateTime?
+  enrolled_by           String?
+  batches               batches                 @relation(fields: [batch_id], references: [id], onDelete: Cascade)
+  programmes            programmes              @relation(fields: [programme_id], references: [id])
+  users                 User                    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lesson_progress       lesson_progress[]
+  live_class_attendance live_class_attendance[]
+  submissions           submissions[]
+
+  @@unique([user_id, batch_id])
+  @@index([programme_id, status])
+}
+
+model lesson_notes {
+  id         String   @id @default(uuid())
+  user_id    String
+  lesson_id  String
+  content    String
+  created_at DateTime @default(now())
+  updated_at DateTime
+  lessons    lessons  @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+  users      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, lesson_id])
+}
+
+model lesson_progress {
+  id                 String         @id @default(uuid())
+  user_id            String
+  lesson_id          String
+  enrollment_id      String
+  status             ProgressStatus @default(NOT_STARTED)
+  progress_percent   Decimal        @default(0) @db.Decimal(5, 2)
+  video_position_sec Int?
+  time_spent_seconds Int            @default(0)
+  completed_at       DateTime?
+  created_at         DateTime       @default(now())
+  updated_at         DateTime
+  enrollments        enrollments    @relation(fields: [enrollment_id], references: [id], onDelete: Cascade)
+  lessons            lessons        @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+  users              User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, lesson_id])
+}
+
+model lessons {
+  id               String            @id @default(uuid())
+  module_id        String
+  title            String            @db.VarChar(500)
+  type             LessonType
+  content_id       String?
+  live_class_id    String?
+  assessment_id    String?
+  external_url     String?
+  description      String?
+  duration_minutes Int?
+  sequence         Int
+  is_mandatory     Boolean           @default(true)
+  created_at       DateTime          @default(now())
+  updated_at       DateTime
+  discussions      discussions[]
+  lesson_notes     lesson_notes[]
+  lesson_progress  lesson_progress[]
+  assessments      assessments?      @relation(fields: [assessment_id], references: [id])
+  contents         contents?         @relation(fields: [content_id], references: [id])
+  live_classes     live_classes?     @relation(fields: [live_class_id], references: [id])
+  modules          modules           @relation(fields: [module_id], references: [id], onDelete: Cascade)
+
+  @@index([module_id, sequence])
+}
+
+model live_class_attendance {
+  id                 String           @id @default(uuid())
+  live_class_id      String
+  user_id            String
+  enrollment_id      String
+  joined_at          DateTime?
+  left_at            DateTime?
+  total_duration_sec Int?
+  status             AttendanceStatus @default(ABSENT)
+  is_manual_override Boolean          @default(false)
+  notes              String?
+  enrollments        enrollments      @relation(fields: [enrollment_id], references: [id], onDelete: Cascade)
+  live_classes       live_classes     @relation(fields: [live_class_id], references: [id], onDelete: Cascade)
+  users              User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([live_class_id, user_id])
+}
+
+model live_classes {
+  id                     String                  @id @default(uuid())
+  title                  String                  @db.VarChar(500)
+  description            String?
+  programme_id           String
+  batch_id               String?
+  host_user_id           String
+  scheduled_start        DateTime
+  scheduled_end          DateTime
+  actual_start           DateTime?
+  actual_end             DateTime?
+  status                 LiveClassStatus         @default(SCHEDULED)
+  livekit_room_name      String?                 @db.VarChar(255)
+  recording_s3_key       String?                 @db.VarChar(1000)
+  recording_duration_sec Int?
+  max_participants       Int                     @default(500)
+  recurrence_rule        String?                 @db.VarChar(500)
+  recurrence_parent_id   String?
+  created_at             DateTime                @default(now())
+  updated_at             DateTime
+  lessons                lessons[]
+  live_class_attendance  live_class_attendance[]
+  batches                batches?                @relation(fields: [batch_id], references: [id])
+  users                  User                    @relation(fields: [host_user_id], references: [id])
+  programmes             programmes              @relation(fields: [programme_id], references: [id])
+  live_classes           live_classes?           @relation("live_classesTolive_classes", fields: [recurrence_parent_id], references: [id])
+  other_live_classes     live_classes[]          @relation("live_classesTolive_classes")
+
+  @@index([programme_id])
+  @@index([scheduled_start, status])
+}
+
+model modules {
+  id           String        @id @default(uuid())
+  programme_id String
+  title        String        @db.VarChar(500)
+  description  String?
+  sequence     Int
+  is_visible   Boolean       @default(true)
+  created_at   DateTime      @default(now())
+  updated_at   DateTime
+  assessments  assessments[]
+  lessons      lessons[]
+  programmes   programmes    @relation(fields: [programme_id], references: [id], onDelete: Cascade)
+
+  @@index([programme_id, sequence])
+}
+
+model notifications {
+  id                                 String              @id @default(uuid())
+  user_id                            String
+  type                               NotificationType
+  title                              String              @db.VarChar(500)
+  body                               String
+  channel                            NotificationChannel
+  is_read                            Boolean             @default(false)
+  read_at                            DateTime?
+  delivery_status                    DeliveryStatus      @default(PENDING)
+  metadata                           Json?
+  sent_by                            String?
+  created_at                         DateTime            @default(now())
+  users_notifications_sent_byTousers User?               @relation("notifications_sent_byTousers", fields: [sent_by], references: [id])
+  users_notifications_user_idTousers User                @relation("notifications_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, is_read])
+}
+
+model programmes {
+  id                  String          @id @default(uuid())
+  title               String          @db.VarChar(500)
+  description         String?
+  slug                String          @unique @db.VarChar(500)
+  thumbnail_url       String?
+  status              ProgrammeStatus @default(DRAFT)
+  category            String?         @db.VarChar(255)
+  start_date          DateTime?
+  end_date            DateTime?
+  self_enrollment     Boolean         @default(false)
+  max_capacity        Int?
+  sequential_lessons  Boolean         @default(true)
+  cert_min_attendance Decimal?        @db.Decimal(5, 2)
+  cert_min_grade      Decimal?        @db.Decimal(5, 2)
+  created_by          String
+  created_at          DateTime        @default(now())
+  updated_at          DateTime
+  deleted_at          DateTime?
+  assessments         assessments[]
+  batches             batches[]
+  certificates        certificates[]
+  enrollments         enrollments[]
+  live_classes        live_classes[]
+  modules             modules[]
+  users               User            @relation(fields: [created_by], references: [id])
+
+  @@index([slug])
+  @@index([status])
+}
+
+model question_options {
+  id          String    @id @default(uuid())
+  question_id String
+  option_text String
+  is_correct  Boolean   @default(false)
+  sequence    Int
+  image_url   String?
+  questions   questions @relation(fields: [question_id], references: [id], onDelete: Cascade)
+}
+
+model questions {
+  id               String             @id @default(uuid())
+  assessment_id    String
+  type             QuestionType
+  question_text    String
+  explanation      String?
+  points           Decimal            @db.Decimal(5, 2)
+  sequence         Int
+  image_url        String?
+  tags             String[]
+  created_at       DateTime           @default(now())
+  updated_at       DateTime
+  answers          answers[]
+  question_options question_options[]
+  assessments      assessments        @relation(fields: [assessment_id], references: [id], onDelete: Cascade)
+}
+
+model settings {
+  id         String   @id @default(uuid())
+  key        String   @unique @db.VarChar(255)
+  value      Json
+  updated_by String?
+  updated_at DateTime
+  users      User?    @relation(fields: [updated_by], references: [id])
+}
+
+model submissions {
+  id                                 String           @id @default(uuid())
+  assessment_id                      String
+  user_id                            String
+  enrollment_id                      String
+  attempt_number                     Int
+  status                             SubmissionStatus @default(IN_PROGRESS)
+  started_at                         DateTime
+  submitted_at                       DateTime?
+  total_score                        Decimal?         @db.Decimal(7, 2)
+  percentage                         Decimal?         @db.Decimal(5, 2)
+  is_passed                          Boolean?
+  graded_by                          String?
+  graded_at                          DateTime?
+  time_taken_seconds                 Int?
+  tab_switches                       Int              @default(0)
+  ip_address                         String?          @db.VarChar(45)
+  answers                            answers[]
+  assessments                        assessments      @relation(fields: [assessment_id], references: [id])
+  enrollments                        enrollments      @relation(fields: [enrollment_id], references: [id], onDelete: Cascade)
+  users_submissions_graded_byTousers User?            @relation("submissions_graded_byTousers", fields: [graded_by], references: [id])
+  users_submissions_user_idTousers   User             @relation("submissions_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([assessment_id, user_id, attempt_number])
+  @@index([assessment_id, user_id])
+}
+
+enum AssessmentStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+  GRADED
+}
+
+enum AssessmentType {
+  QUIZ
+  ASSIGNMENT
+  EXAM
+  PRACTICE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  EXCUSED
+}
+
+enum BatchStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum CertificateStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum ContentType {
+  VIDEO
+  DOCUMENT
+  SCORM
+  EXTERNAL_LINK
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  DROPPED
+  WAITLISTED
+}
+
+enum FacultyRole {
+  PRIMARY
+  SECONDARY
+  GUEST
+}
+
+enum LessonType {
+  VIDEO
+  DOCUMENT
+  LIVE_CLASS
+  ASSESSMENT
+  EXTERNAL_LINK
+}
+
+enum LiveClassStatus {
+  SCHEDULED
+  LIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+}
+
+enum NotificationType {
+  ANNOUNCEMENT
+  CLASS_REMINDER
+  GRADE_PUBLISHED
+  CERT_ISSUED
+  ENROLLMENT
+  SYSTEM
+}
+
+enum ProgrammeStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum ProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum QuestionType {
+  MCQ_SINGLE
+  MCQ_MULTI
+  TRUE_FALSE
+  SHORT_ANSWER
+  LONG_ANSWER
+  FILE_UPLOAD
+}
+
+enum ShowResults {
+  IMMEDIATELY
+  AFTER_CLOSE
+  AFTER_GRADING
+  NEVER
+}
+
+enum SubmissionStatus {
+  IN_PROGRESS
+  SUBMITTED
+  GRADED
+  LATE
+}
+
+enum TranscodeStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  PROGRAMME_ADMIN
+  FACULTY
+  GUEST_FACULTY
+  EVALUATOR
+  LEARNER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+  PENDING
 }

@@ -10,7 +10,7 @@ export class LearnerService {
       where: { id: userId },
       select: {
         id: true,
-        fullName: true,
+        full_name: true,
         email: true,
         role: true,
       },
@@ -25,4 +25,3 @@ export class LearnerService {
     };
   }
 }
-
