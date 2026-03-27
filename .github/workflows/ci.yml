@@ -15,6 +15,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Checkout shared package
+        uses: actions/checkout@v4
+        with:
+          repository: NDRK-LMS/ndrk-lms-shared
+          path: ../ndrk-lms-shared
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
