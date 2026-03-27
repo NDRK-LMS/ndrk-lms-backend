@@ -8,6 +8,7 @@ import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
 import { LearnerModule } from './learner/learner.module';
 import { AdminUsersModule } from './admin-users/admin-users.module';
 import { AdminProgrammesModule } from './admin-programmes/admin-programmes.module';
+import { ContentModule } from './content/content.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { AdminProgrammesModule } from './admin-programmes/admin-programmes.modul
     LearnerModule,
     AdminUsersModule,
     AdminProgrammesModule,
+    ContentModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],
