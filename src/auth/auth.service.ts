@@ -74,10 +74,11 @@ export class AuthService {
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
-        fullName: dto.fullName,
-        passwordHash,
+        full_name: dto.fullName,
+        password_hash: passwordHash,
         role,
         status: 'ACTIVE',
+        updated_at: new Date(),
       },
     });
 
@@ -86,11 +87,11 @@ export class AuthService {
 
   async login(dto: LoginDto, context?: RequestContext) {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (!user || !user.passwordHash) {
+    if (!user || !user.password_hash) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const isValid = await compare(dto.password, user.passwordHash);
+    const isValid = await compare(dto.password, user.password_hash);
     if (!isValid) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -105,7 +106,7 @@ export class AuthService {
       const tempToken = this.generateTempToken(user.id);
       return {
         requiresMfa: true,
-        mfaEnabled: !!user.mfaEnabled,
+        mfaEnabled: !!user.mfa_enabled,
         tempToken,
         userId: user.id,
       };
@@ -136,11 +137,12 @@ export class AuthService {
         user = await this.prisma.user.create({
           data: {
             email,
-            fullName,
-            googleId,
-            avatarUrl,
+            full_name: fullName,
+            google_id: googleId,
+            avatar_url: avatarUrl,
             role: UserRole.LEARNER,
             status: 'ACTIVE',
+            updated_at: new Date(),
           },
         });
       }
@@ -155,7 +157,7 @@ export class AuthService {
         const tempToken = this.generateTempToken(user.id);
         return {
           requiresMfa: true,
-          mfaEnabled: !!user.mfaEnabled,
+          mfaEnabled: !!user.mfa_enabled,
           tempToken,
           userId: user.id,
         };
@@ -197,7 +199,7 @@ export class AuthService {
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
-        mfaSecret: encrypted,
+        mfa_secret: encrypted,
       },
     });
 
@@ -210,11 +212,11 @@ export class AuthService {
   async mfaVerify(tempToken: string, code: string, context?: RequestContext) {
     const userId = this.verifyTempToken(tempToken);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.mfaSecret) {
+    if (!user || !user.mfa_secret) {
       throw new UnauthorizedException('User or MFA secret not found');
     }
 
-    const secret = this.decryptMfaSecret(user.mfaSecret);
+    const secret = this.decryptMfaSecret(user.mfa_secret);
     const isValid = otplib.verify({ token: code, secret });
     if (!isValid) {
       throw new UnauthorizedException('Invalid MFA code');
@@ -222,7 +224,7 @@ export class AuthService {
 
     const updated = await this.prisma.user.update({
       where: { id: user.id },
-      data: { mfaEnabled: true },
+      data: { mfa_enabled: true },
     });
 
     return this.generateTokens(updated, context);
@@ -232,11 +234,11 @@ export class AuthService {
   async mfaChallenge(tempToken: string, code: string, context?: RequestContext) {
     const userId = this.verifyTempToken(tempToken);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.mfaSecret || !user.mfaEnabled) {
+    if (!user || !user.mfa_secret || !user.mfa_enabled) {
       throw new UnauthorizedException('MFA is not enabled for this user');
     }
 
-    const secret = this.decryptMfaSecret(user.mfaSecret);
+    const secret = this.decryptMfaSecret(user.mfa_secret);
     const isValid = otplib.verify({ token: code, secret });
     if (!isValid) {
       throw new UnauthorizedException('Invalid MFA code');
@@ -258,8 +260,8 @@ export class AuthService {
 
     await this.prisma.passwordResetToken.create({
       data: {
-        userId: user.id,
-        tokenHash,
+        user_id: user.id,
+        token_hash: tokenHash,
         expiresAt,
       },
     });
@@ -273,14 +275,14 @@ export class AuthService {
   async resetPassword(dto: ResetPasswordDto) {
     const record = await this.prisma.passwordResetToken.findFirst({
       where: {
-        usedAt: null,
+        used_at: null,
         expiresAt: { gt: new Date() },
       },
-      orderBy: { createdAt: 'desc' },
-      include: { user: true },
+      orderBy: { created_at: 'desc' },
+      include: { users: true },
     });
 
-    if (!record || !(await compare(dto.token, record.tokenHash))) {
+    if (!record || !(await compare(dto.token, record.token_hash))) {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
@@ -288,12 +290,12 @@ export class AuthService {
 
     await this.prisma.$transaction([
       this.prisma.user.update({
-        where: { id: record.userId },
-        data: { passwordHash: newHash },
+        where: { id: record.user_id },
+        data: { password_hash: newHash },
       }),
       this.prisma.passwordResetToken.update({
         where: { id: record.id },
-        data: { usedAt: new Date() },
+        data: { used_at: new Date() },
       }),
     ]);
 
@@ -304,10 +306,10 @@ export class AuthService {
     user: {
     id: string;
     email: string;
-    fullName: string;
+    full_name: string;
     role: string;
-    avatarUrl: string | null;
-    mfaEnabled: boolean;
+    avatar_url: string | null;
+    mfa_enabled: boolean;
     },
     context?: RequestContext,
   ) {
@@ -319,7 +321,7 @@ export class AuthService {
 
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
-      expiresIn: '15m',
+      expiresIn: '1h',
     });
 
     const refreshToken = this.jwtService.sign(payload, {
@@ -329,40 +331,40 @@ export class AuthService {
 
     await this.prisma.session.create({
       data: {
-        userId: user.id,
-        refreshTokenHash: await hash(refreshToken, 10),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        ipAddress: context?.ipAddress ?? '0.0.0.0',
-        deviceInfo: context?.deviceInfo,
+        user_id: user.id,
+        refresh_token_hash: await hash(refreshToken, 10),
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        ip_address: context?.ipAddress ?? '0.0.0.0',
+        device_info: context?.deviceInfo,
       },
     });
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      data: { last_login_at: new Date() },
     });
 
     const welcomeMessages: Record<string, string> = {
-      [UserRole.SUPER_ADMIN]: `Welcome back, ${user.fullName}! System administrator access granted.`,
-      [UserRole.PROGRAMME_ADMIN]: `Welcome, ${user.fullName}! Ready to manage your programmes?`,
-      [UserRole.FACULTY]: `Welcome, Professor ${user.fullName}! Your classes await.`,
-      [UserRole.GUEST_FACULTY]: `Welcome, ${user.fullName}! Thank you for joining as guest faculty.`,
-      [UserRole.EVALUATOR]: `Welcome, ${user.fullName}! Assessment dashboard ready.`,
-      [UserRole.LEARNER]: `Welcome back, ${user.fullName}! Continue your learning journey.`,
+      [UserRole.SUPER_ADMIN]: `Welcome back, ${user.full_name}! System administrator access granted.`,
+      [UserRole.PROGRAMME_ADMIN]: `Welcome, ${user.full_name}! Ready to manage your programmes?`,
+      [UserRole.FACULTY]: `Welcome, Professor ${user.full_name}! Your classes await.`,
+      [UserRole.GUEST_FACULTY]: `Welcome, ${user.full_name}! Thank you for joining as guest faculty.`,
+      [UserRole.EVALUATOR]: `Welcome, ${user.full_name}! Assessment dashboard ready.`,
+      [UserRole.LEARNER]: `Welcome back, ${user.full_name}! Continue your learning journey.`,
     };
 
     return {
       user: {
         id: user.id,
         email: user.email,
-        fullName: user.fullName,
+        fullName: user.full_name,
         role: user.role,
-        avatarUrl: user.avatarUrl,
-        mfaEnabled: user.mfaEnabled,
+        avatarUrl: user.avatar_url,
+        mfaEnabled: user.mfa_enabled,
       },
       accessToken,
       refreshToken,
-      message: welcomeMessages[user.role] ?? `Welcome, ${user.fullName}!`,
+      message: welcomeMessages[user.role] ?? `Welcome, ${user.full_name}!`,
     };
   }
 
@@ -395,16 +397,16 @@ export class AuthService {
       }) as { sub: string };
 
       const session = await this.prisma.session.findFirst({
-        where: { userId: payload.sub },
-        include: { user: true },
+        where: { user_id: payload.sub },
+        include: { users: true },
       });
 
-      if (!session || !(await compare(refreshToken, session.refreshTokenHash))) {
+      if (!session || !(await compare(refreshToken, session.refresh_token_hash))) {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
       await this.prisma.session.delete({ where: { id: session.id } });
-      return this.generateTokens(session.user, context);
+      return this.generateTokens(session.users, context);
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -416,14 +418,14 @@ export class AuthService {
       select: {
         id: true,
         email: true,
-        fullName: true,
+        full_name: true,
         role: true,
-        avatarUrl: true,
-        mfaEnabled: true,
-        lastLoginAt: true,
+        avatar_url: true,
+        mfa_enabled: true,
+        last_login_at: true,
         phone: true,
         bio: true,
-        notificationPrefs: true,
+        notification_prefs: true,
       },
     });
 
@@ -436,12 +438,12 @@ export class AuthService {
   async updateMe(userId: string, dto: UpdateProfileDto) {
     const data: Prisma.UserUpdateInput = {};
 
-    if (dto.fullName != null) data.fullName = dto.fullName;
+    if (dto.fullName != null) data.full_name = dto.fullName;
     if (dto.phone !== undefined) data.phone = dto.phone;
-    if (dto.avatarUrl !== undefined) data.avatarUrl = dto.avatarUrl;
+    if (dto.avatarUrl !== undefined) data.avatar_url = dto.avatarUrl;
     if (dto.bio !== undefined) data.bio = dto.bio;
     if (dto.notificationPrefs !== undefined) {
-      data.notificationPrefs = dto.notificationPrefs as Prisma.InputJsonValue;
+      data.notification_prefs = dto.notificationPrefs as Prisma.InputJsonValue;
     }
     if (dto.metadata !== undefined) {
       data.metadata = dto.metadata as Prisma.InputJsonValue;
@@ -453,14 +455,14 @@ export class AuthService {
       select: {
         id: true,
         email: true,
-        fullName: true,
+        full_name: true,
         role: true,
-        avatarUrl: true,
-        mfaEnabled: true,
-        lastLoginAt: true,
+        avatar_url: true,
+        mfa_enabled: true,
+        last_login_at: true,
         phone: true,
         bio: true,
-        notificationPrefs: true,
+        notification_prefs: true,
       },
     });
 
